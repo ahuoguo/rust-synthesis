@@ -10,7 +10,7 @@ use string_dsl::{Expr as SExpr, NonTerminal as SNonTerminal, Transition as STran
 fn main() {
     _string_dsl_tests();
 
-    // _arith_dsl_tests();
+    _arith_dsl_tests();
 }
 
 // bottom up synthesis algorithm
@@ -29,15 +29,16 @@ where
 
         // change height to size
         // assume the max size is 10
-        for n in 1..16 {
-            println!("n is {}", n);
+        for n in 1..20 {
             mk_gen!(let new_terms_res = stringdsl_new_terms(n, b.clone()));
             for (a, t) in new_terms_res {
                 if a == SNonTerminal::S {
                     match t.clone() {
                         SExpr::S(s) => {
-                            println!("{}", s.clone());
+                            // println!("{}", s.clone());
                             let mut pass = true;
+                            // let size = string_dsl::size(&s);
+                            // assert!(size == n as usize);
                             for (input, output) in e.clone() {
                                 if string_dsl::eval(s.clone(), T::to_stringdsl_input(input))
                                     != T::to_stringdsl_output(output)
@@ -210,16 +211,21 @@ fn stringdsl_new_terms(n: u32, b: HashMap<(u32, SNonTerminal), Vec<SExpr>>) {
             // create a Vector all of length k, each vector consists of to n-1, and the sum is n-1
             let sizes = (1..n).product_repeat(*k as usize).collect_vec();
             for ns in sizes.clone() {
-                if !ns.iter().sum::<u32>() == n - 1 {
+                if ns.iter().sum::<u32>() != n - 1 {
                     continue;
                 }
-                // println!("ns is {:?}, transition is {:?}", ns, transition);
                 let mut subterms: Vec<Vec<SExpr>> = Vec::new();
                 for i in 0..*k {
-                    let subterm = b.get(&(ns[i as usize], subnt[i as usize])).unwrap();
-                    subterms.push(subterm.clone());
+                    let subterm = b.get(&(ns[i as usize], subnt[i as usize]));
+                    match subterm {
+                        Some(subterm) => {
+                            subterms.push(subterm.clone());
+                        }
+                        None => {
+                            subterms.push(Vec::new());
+                        }
+                    }
                 }
-
                 for subterm in subterms.iter().multi_cartesian_product() {
                     match transition {
                         STransition::Append => match (subterm[0].clone(), subterm[1].clone()) {
@@ -258,14 +264,14 @@ fn stringdsl_new_terms(n: u32, b: HashMap<(u32, SNonTerminal), Vec<SExpr>>) {
                                 panic! {"production list encoded with errorneous information"}
                             }
                         },
-                        // STransition::Len => match subterm[0].clone() {
-                        //     SExpr::S(s) => {
-                        //         yield_!((SNonTerminal::N, SExpr::N(N::Len(s))));
-                        //     }
-                        //     _ => {
-                        //         panic! {"production list encoded with errorneous information"}
-                        //     }
-                        // },
+                        STransition::Len => match subterm[0].clone() {
+                            SExpr::S(s) => {
+                                yield_!((SNonTerminal::N, SExpr::N(N::Len(s))));
+                            }
+                            _ => {
+                                panic! {"production list encoded with errorneous information"}
+                            }
+                        },
                         _ => {
                             panic! {"production list encoded with errorneous information"}
                         }
