@@ -3,6 +3,21 @@
 // For simplicity, 0 is interpreted as false, otherwise true
 use std::fmt;
 
+
+pub static PRODUCTION: &[(u32, Transition)] = &[
+    (0, Transition::Input),
+    (2, Transition::Add),
+    (2, Transition::Sub),
+    (2, Transition::Mul),
+    (2, Transition::Div),
+    (3, Transition::If),
+    (2, Transition::Eq),
+    (2, Transition::Lt),
+    (1, Transition::Not),
+];
+
+
+
 #[derive(Clone, Debug)]
 pub enum S {
     Input(usize),
@@ -14,6 +29,18 @@ pub enum S {
     Eq(Box<S>, Box<S>),
     Lt(Box<S>, Box<S>),
     Not(Box<S>),
+}
+
+pub enum Transition {
+    Input,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    If,
+    Eq,
+    Lt,
+    Not,
 }
 
 pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
@@ -30,7 +57,7 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
             _ => None,
         },
         S::Sub(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
-            (Some(v1), Some(v2)) => Some(v1 - v2),
+            (Some(v1), Some(v2)) => if v1 > v2 { Some(v1 - v2) } else { None },
             _ => None,
         },
         S::Mul(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
@@ -93,7 +120,13 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
 impl fmt::Display for S {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            S::Input(v) => write!(f, "args.{}", v),
+            S::Input(v) => // write!(f, "args.{}", v),
+                                        match v {
+                                            0 => write!(f, "x"),
+                                            1 => write!(f, "y"),
+                                            2 => write!(f, "z"),
+                                            _ => write!(f, "args.{}", v),
+                                        },
             S::Add(s1, s2) => write!(f, "({} + {})", s1, s2),
             S::Sub(s1, s2) => write!(f, "({} - {})", s1, s2),
             S::Mul(s1, s2) => write!(f, "({} * {})", s1, s2),

@@ -6,8 +6,8 @@ mod string_dsl;
 use itertools::{Itertools, MultiProduct};
 
 use ::next_gen::prelude::*;
-use string_dsl::*;
-use arith_dsl::{S as AS, eval as aeval};
+use arith_dsl::{eval as aeval, S as AS, Transition as ATransition};
+use string_dsl::{NonTerminal as SNonTerminal, Transition as STransition, S, N, Expr as SExpr};
 
 fn main() {
     _string_dsl_tests();
@@ -17,13 +17,7 @@ fn main() {
     //     Box::new(AS::Input(1)),
     //     Box::new(AS::Input(0)));
 
-    // let input1 = vec![1, 2];
-    // let output1 = aeval(program1.clone(), input1.clone());
-    // println!("output1 is {:?}", output1);
-
-    // let input2 = vec![2, 1];
-    // let output2 = aeval(program1.clone(), input2.clone());
-    // println!("output2 is {:?}", output2);
+    _arith_dsl_tests();
 
 }
 
@@ -32,62 +26,169 @@ fn main() {
 // might make the member ship oracle some sort of a trait?
 // the output is the program, with start node S
 // I did not abstract away the grammar for now
-fn bottom_up_synthesis(e: Vec<(String, String)>) -> S {
-    let mut b: HashMap<(u32, NonTerminal), Vec<Expr>> = HashMap::new();
+fn bottom_up_synthesis<T>(e: Vec<(T::Input, T::Output)>) -> String
+where
+    T: DSL,
+    T::Input: Clone,
+    T::Output: Clone,
+    <T as DSL>::Output: PartialEq, 
+{
+    if T::is_stringdsl() {
+        let mut counter = 0;
+        let mut b: HashMap<(u32, SNonTerminal), Vec<SExpr>> = HashMap::new();
 
-    for n in 0..10 {
-        // assume the max height is 10
-        mk_gen!(let new_terms_res = new_terms(n, b.clone()));
-        for (a, t) in new_terms_res {
-            if a == NonTerminal::S {
-                match t.clone() {
-                    Expr::S(s) => {
-                        println!("{}", s.clone());
-                        let mut pass = true;
-                        for (input, output) in e.clone() {
-                            if eval(s.clone(), input.clone()) != output {
-                                pass = false;
+        for n in 0..10 {
+            // assume the max height is 10
+            mk_gen!(let new_terms_res = stringdsl_new_terms(n, b.clone()));
+            for (a, t) in new_terms_res {
+                if a == SNonTerminal::S {
+                    match t.clone() {
+                        SExpr::S(s) => {
+                            // println!("{}", s.clone());
+                            let mut pass = true;
+                            for (input, output) in e.clone() {
+                                if string_dsl::eval(s.clone(), T::to_stringdsl_input(input)) != T::to_stringdsl_output(output) {
+                                    pass = false;
+                                }
+                            }
+                            if pass == true {
+                                println!("Found the program: {}", s);
+                                println!("counter is {}, height is {}", counter, n);
+                                return s.to_string();
                             }
                         }
-                        std::io::stdout().flush().unwrap();
-                        if pass == true {
-                            println!("Found the program: {}", s);
-                            return s;
+                        _ => {
+                            panic! {"SNonTerminal and SExpr is not aligned"}
                         }
                     }
-                    _ => {
-                        panic! {"NonTerminal and Expr is not aligned"}
-                    }
                 }
+                counter += 1;
+                b.entry((n, a)).or_insert(Vec::new()).push(t);
+                // eprintln!("b is {:?}", b.clone());
             }
-            b.entry((n, a)).or_insert(Vec::new()).push(t);
-            // eprintln!("b is {:?}", b.clone());
         }
     }
+
+    if T::is_arithdsl() {
+        let mut b: HashMap<u32, Vec<AS>> = HashMap::new();
+        let mut counter = 0;
+        
+        let mut max_input_len = T::to_arithdsl_input(e[0].0.clone()).len();
+        for (input, _) in e.clone() {
+            if T::to_arithdsl_input(input.clone()).len() >= max_input_len {
+                max_input_len = T::to_arithdsl_input(input).len();
+            }
+        }
+
+        for n in 0..10 {
+            // assume the max height is 10
+            mk_gen!(let new_terms_res = arithdsl_new_terms(max_input_len, n, b.clone()));
+            for s in new_terms_res {
+                // println!("{}", s.clone());
+                let mut pass = true;
+                for (input, output) in e.clone() {
+                    if arith_dsl::eval(s.clone(), T::to_arithdsl_input(input)) != T::to_arithdsl_output(output) {
+                        pass = false;
+                    }
+                }
+                if pass == true {
+                    println!("Found the program: {}", s);
+                    println!("counter is {}, height is {}", counter, n);
+                    return format!("{}", s);
+                }
+                b.entry(n).or_insert(Vec::new()).push(s);
+                counter += 1;
+            }
+        }
+
+    }
+
     panic! {"No program found"}
 }
 
+// we do not need to specify nonterminal becuase there's only one
+#[generator(yield(AS))]
+fn arithdsl_new_terms(len: usize, n: u32, b: HashMap<u32, Vec<AS>>) {
+    for (k, transition) in arith_dsl::PRODUCTION {
+        if *k == 0 && n == 0 {
+            match transition {
+                ATransition::Input => {
+                    for i in 0..len {
+                        yield_!(AS::Input(i as usize));
+                    }
+                }
+                _ => {
+                    panic! {"production list encoded with errorneous information"}
+                }
+            }
+        } else {
+            let heights = (0..n).product_repeat(*k as usize).collect_vec();
+            for ns in heights.clone() {
+                if !ns.contains(&(n - 1)) {
+                    continue;
+                }
+                let mut subterms: Vec<Vec<AS>> = Vec::new();
+                for i in 0..*k {
+                    let subterm = b.get(&(ns[i as usize])).unwrap();
+                    subterms.push(subterm.clone());
+                }
+                for subterm in subterms.iter().multi_cartesian_product() {
+                    match transition {
+                        ATransition::Add => {
+                            yield_!(AS::Add(Box::new(subterm[0].clone()), Box::new(subterm[1].clone())));
+                        },
+                        ATransition::Sub => {
+                            yield_!(AS::Sub(Box::new(subterm[0].clone()), Box::new(subterm[1].clone())));
+                        },
+                        ATransition::Mul => {
+                            yield_!(AS::Mul(Box::new(subterm[0].clone()), Box::new(subterm[1].clone())));
+                        },
+                        ATransition::Div => {
+                            yield_!(AS::Div(Box::new(subterm[0].clone()), Box::new(subterm[1].clone())));
+                        },
+                        ATransition::If => {
+                            yield_!(AS::If(Box::new(subterm[0].clone()), Box::new(subterm[1].clone()), Box::new(subterm[2].clone())));
+                        },
+                        ATransition::Eq => {
+                            yield_!(AS::Eq(Box::new(subterm[0].clone()), Box::new(subterm[1].clone())));
+                        },
+                        ATransition::Lt => {
+                            yield_!(AS::Lt(Box::new(subterm[0].clone()), Box::new(subterm[1].clone())));
+                        },
+                        ATransition::Not => {
+                            yield_!(AS::Not(Box::new(subterm[0].clone())));
+                        },
+                        _ => {
+                            panic! {"production list encoded with errorneous information"}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // TODO: It's unsatisfying that the HashMap is borrowed everytime.
-#[generator(yield((NonTerminal, Expr)))]
-fn new_terms(n: u32, b: HashMap<(u32, NonTerminal), Vec<Expr>>) {
+#[generator(yield((SNonTerminal, SExpr)))]
+fn stringdsl_new_terms(n: u32, b: HashMap<(u32, SNonTerminal), Vec<SExpr>>) {
     // for all grammar productions
 
     // base case, arity and height are 0
     // if n == 0 && k == 0 {
-    //   return (NonTerminal::S, S::Input);
+    //   return (SNonTerminal::S, S::Input);
 
     // cannot implement Copy trait for recursive enum (with Box)
     for (_nt, k, transition, subnt) in string_dsl::PRODUCTION {
         if *k == 0 && n == 0 {
             match transition {
-                Transition::Input => {
-                    yield_!((NonTerminal::S, Expr::S(S::Input)));
+                STransition::Input => {
+                    yield_!((SNonTerminal::S, SExpr::S(S::Input)));
                 }
-                Transition::Space => {
-                    yield_!((NonTerminal::S, Expr::S(S::Space)));
+                STransition::Space => {
+                    yield_!((SNonTerminal::S, SExpr::S(S::Space)));
                 }
-                Transition::Zero => {
-                    yield_!((NonTerminal::N, Expr::N(N::Zero)));
+                STransition::Zero => {
+                    yield_!((SNonTerminal::N, SExpr::N(N::Zero)));
                 }
                 _ => {
                     panic! {"production list encoded with errorneous information"}
@@ -101,7 +202,7 @@ fn new_terms(n: u32, b: HashMap<(u32, NonTerminal), Vec<Expr>>) {
                 if !ns.contains(&(n - 1)) {
                     continue;
                 }
-                let mut subterms: Vec<Vec<Expr>> = Vec::new();
+                let mut subterms: Vec<Vec<SExpr>> = Vec::new();
                 for i in 0..*k {
                     // println!("i is {}", i);
                     // eprintln!("ns[i] is {}, subnt[i] is {:?}", ns[i as usize], subnt[i as usize]);
@@ -113,23 +214,23 @@ fn new_terms(n: u32, b: HashMap<(u32, NonTerminal), Vec<Expr>>) {
                 for subterm in subterms.iter().multi_cartesian_product() {
                     // println!("subterm is {:?}", subterm);
                     match transition {
-                        Transition::Append => match (subterm[0].clone(), subterm[1].clone()) {
-                            (Expr::S(s1), Expr::S(s2)) => {
+                        STransition::Append => match (subterm[0].clone(), subterm[1].clone()) {
+                            (SExpr::S(s1), SExpr::S(s2)) => {
                                 yield_!((
-                                    NonTerminal::S,
-                                    Expr::S(S::Append(Box::new(s1), Box::new(s2)))
+                                    SNonTerminal::S,
+                                    SExpr::S(S::Append(Box::new(s1), Box::new(s2)))
                                 ));
                             }
                             _ => {
                                 panic! {"production list encoded with errorneous information"}
                             }
                         },
-                        Transition::SubString => {
+                        STransition::SubString => {
                             match (subterm[0].clone(), subterm[1].clone(), subterm[2].clone()) {
-                                (Expr::S(s1), Expr::N(n1), Expr::N(n2)) => {
+                                (SExpr::S(s1), SExpr::N(n1), SExpr::N(n2)) => {
                                     yield_!((
-                                        NonTerminal::S,
-                                        Expr::S(S::SubString(
+                                        SNonTerminal::S,
+                                        SExpr::S(S::SubString(
                                             Box::new(s1),
                                             Box::new(n1),
                                             Box::new(n2)
@@ -141,17 +242,17 @@ fn new_terms(n: u32, b: HashMap<(u32, NonTerminal), Vec<Expr>>) {
                                 }
                             }
                         }
-                        Transition::Find => match (subterm[0].clone(), subterm[1].clone()) {
-                            (Expr::S(s1), Expr::S(s2)) => {
-                                yield_!((NonTerminal::N, Expr::N(N::Find(s1, s2))));
+                        STransition::Find => match (subterm[0].clone(), subterm[1].clone()) {
+                            (SExpr::S(s1), SExpr::S(s2)) => {
+                                yield_!((SNonTerminal::N, SExpr::N(N::Find(s1, s2))));
                             }
                             _ => {
                                 panic! {"production list encoded with errorneous information"}
                             }
                         },
-                        Transition::Len => match subterm[0].clone() {
-                            Expr::S(s) => {
-                                yield_!((NonTerminal::N, Expr::N(N::Len(s))));
+                        STransition::Len => match subterm[0].clone() {
+                            SExpr::S(s) => {
+                                yield_!((SNonTerminal::N, SExpr::N(N::Len(s))));
                             }
                             _ => {
                                 panic! {"production list encoded with errorneous information"}
@@ -189,7 +290,100 @@ where
 
 impl<T: Iterator + Clone> ProductRepeat for T where T::Item: Clone {}
 
+// an attempt to at least put the two synthesizer into one function
+// general generic support from traits is kinda impossible because the generators
+// does not support generics
+// see https://github.com/danielhenrymantilla/next-gen-rs/issues/14
+trait DSL {
+    type Input;
+    type Output;
+    type Program;
+
+    fn is_stringdsl() -> bool;
+    fn is_arithdsl() -> bool;
+    // fn eval(prog: Self::Program, input: Self::Input) -> Self::Output;
+
+    fn to_stringdsl_input(_ :Self::Input) -> String;
+    fn to_arithdsl_input(_ :Self::Input) -> Vec<u32>;
+
+    fn to_arithdsl_output(_ :Self::Output) -> Option<u32>;
+    fn to_stringdsl_output(_ :Self::Output) -> String;
+}
+
+struct StringDSL {}
+
+impl DSL for StringDSL {
+    type Input = String;
+    type Output = String;
+    type Program = S;
+
+    fn is_stringdsl() -> bool {
+        true
+    }
+
+    fn is_arithdsl() -> bool {
+        false
+    }
+
+    fn to_stringdsl_input(input: Self::Input) -> String {
+        input
+    }
+
+    fn to_arithdsl_input(input :Self::Input) -> Vec<u32> {
+        panic! {"StringDSL does not have an arith input"}
+    }
+
+    fn to_arithdsl_output(output :Self::Output) -> Option<u32> {
+        panic! {"StringDSL does not have an arith output"}
+    }
+
+    fn to_stringdsl_output(output :Self::Output) -> String {
+        output
+    }
+    // fn eval(prog: S, input: Self::Input) -> Self::Output {
+    //     string_dsl::eval(prog, input)
+    // }
+}
+
+struct ArithDSL {}
+
+impl DSL for ArithDSL {
+    type Input = Vec<u32>;
+    type Output = Option<u32>;
+    type Program = AS;
+
+    fn is_stringdsl() -> bool {
+        false
+    }
+
+    fn is_arithdsl() -> bool {
+        true
+    }
+
+    fn to_stringdsl_input(input: Self::Input) -> String {
+        panic! {"ArithDSL does not have a string input"}
+    }
+
+    fn to_arithdsl_input(input :Self::Input) -> Vec<u32> {
+        input
+    }
+
+    fn to_arithdsl_output(output :Self::Output) -> Option<u32> {
+        output
+    }
+
+    fn to_stringdsl_output(output :Self::Output) -> String {
+        panic! {"ArithDSL does not have a string output"}
+    }
+    // fn eval(prog: AS, input: Self::Input) -> Self::Output {
+    //     arith_dsl::eval(prog, input)
+    // }
+
+}
+
+
 fn _string_dsl_tests() {
+    println!("Testing String DSL");
     let input1 = "Nadia Polikarpova".to_string();
     let output1 = "Nadia".to_string();
 
@@ -216,15 +410,43 @@ fn _string_dsl_tests() {
 
     // x[0..find(x," ")]
     // this program synthesizes really fast
-    bottom_up_synthesis(vec![(input1, output1), (input2, output2)]);
+    bottom_up_synthesis::<StringDSL>(vec![(input1, output1), (input2, output2)]);
 
     // x[0..find(x," ")]+" "+x[0..find(x," ")]
     // height = 4, there are 6*10^15 according to nadia's book
     // bottom_up_synthesis(vec![(input3, output3), (input4, output4)]);
 
     // x[0..1]
-    bottom_up_synthesis(vec![(input5, output5), (input6, output6)]);
+    bottom_up_synthesis::<StringDSL>(vec![(input5, output5), (input6, output6)]);
 
     // ("_" ++ x)[len(x)..len(x ++ "_")]
-    // bottom_up_synthesis(vec![(input7, output7), (input8, output8)]);
+    bottom_up_synthesis::<StringDSL>(vec![(input7, output7), (input8, output8)]);
+}
+
+fn _arith_dsl_tests() {
+    println!("Testing Arith DSL");
+    let input1 = vec![1, 2];
+    // let output1 = aeval(program1.clone(), input1.clone());
+    // println!("output1 is {:?}", output1);
+    let output1 = Some(2);
+
+    let input2 = vec![2, 1];
+    // let output2 = aeval(program1.clone(), input2.clone());
+    // println!("output2 is {:?}", output2);
+    let output2 = Some(2);
+
+    let input3 = vec![2, 4];
+    let output3 = Some(4);
+
+    let input4 = vec![4, 2];
+    let output4 = Some(4);
+
+    let input5 = vec![20, 10];
+    let output5 = Some(20);
+
+    let input6 = vec![10, 20];
+
+
+    bottom_up_synthesis::<ArithDSL>(vec![(input1, output1), (input2, output2), (input3, output3), (input4, output4), (input5, output5)]);
+
 }
