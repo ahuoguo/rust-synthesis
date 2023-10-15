@@ -10,7 +10,7 @@ use string_dsl::{Expr as SExpr, NonTerminal as SNonTerminal, Transition as STran
 fn main() {
     _string_dsl_tests();
 
-    _arith_dsl_tests();
+    // _arith_dsl_tests();
 }
 
 // bottom up synthesis algorithm
@@ -27,14 +27,16 @@ where
         let mut counter = 0;
         let mut b: HashMap<(u32, SNonTerminal), Vec<SExpr>> = HashMap::new();
 
-        // assume the max height is 10
-        for n in 0..10 {
+        // change height to size
+        // assume the max size is 10
+        for n in 1..16 {
+            println!("n is {}", n);
             mk_gen!(let new_terms_res = stringdsl_new_terms(n, b.clone()));
             for (a, t) in new_terms_res {
                 if a == SNonTerminal::S {
                     match t.clone() {
                         SExpr::S(s) => {
-                            // println!("{}", s.clone());
+                            println!("{}", s.clone());
                             let mut pass = true;
                             for (input, output) in e.clone() {
                                 if string_dsl::eval(s.clone(), T::to_stringdsl_input(input))
@@ -45,7 +47,7 @@ where
                             }
                             if pass {
                                 println!("Found the program: {}", s);
-                                println!("counter is {}, height is {}", counter, n);
+                                println!("counter is {}, size is {}", counter, n);
                                 return s.to_string();
                             }
                         }
@@ -186,14 +188,9 @@ fn arithdsl_new_terms(len: usize, n: u32, b: HashMap<u32, Vec<AS>>) {
 #[generator(yield((SNonTerminal, SExpr)))]
 fn stringdsl_new_terms(n: u32, b: HashMap<(u32, SNonTerminal), Vec<SExpr>>) {
     // for all grammar productions
-
-    // base case, arity and height are 0
-    // if n == 0 && k == 0 {
-    //   return (SNonTerminal::S, S::Input);
-
     // cannot implement Copy trait for recursive enum (with Box)
     for (_nt, k, transition, subnt) in string_dsl::PRODUCTION {
-        if *k == 0 && n == 0 {
+        if *k == 0 && n == 1 {
             match transition {
                 STransition::Input => {
                     yield_!((SNonTerminal::S, SExpr::S(S::Input)));
@@ -210,23 +207,20 @@ fn stringdsl_new_terms(n: u32, b: HashMap<(u32, SNonTerminal), Vec<SExpr>>) {
             }
         } else {
             // build subterms from the bank
-            // eprintln!("sub-nonterminals are {:?} n is {}, k is {}, transition: {:?}", subnt, n, k, transition);
-            let heights = (0..n).product_repeat(*k as usize).collect_vec();
-            for ns in heights.clone() {
-                if !ns.contains(&(n - 1)) {
+            // create a Vector all of length k, each vector consists of to n-1, and the sum is n-1
+            let sizes = (1..n).product_repeat(*k as usize).collect_vec();
+            for ns in sizes.clone() {
+                if !ns.iter().sum::<u32>() == n - 1 {
                     continue;
                 }
+                // println!("ns is {:?}, transition is {:?}", ns, transition);
                 let mut subterms: Vec<Vec<SExpr>> = Vec::new();
                 for i in 0..*k {
-                    // println!("i is {}", i);
-                    // eprintln!("ns[i] is {}, subnt[i] is {:?}", ns[i as usize], subnt[i as usize]);
-                    // println!("ns, subnt are {:?}, {:?}", ns, subnt);
-                    // println!("b is {:?}", b);
                     let subterm = b.get(&(ns[i as usize], subnt[i as usize])).unwrap();
                     subterms.push(subterm.clone());
                 }
+
                 for subterm in subterms.iter().multi_cartesian_product() {
-                    // println!("subterm is {:?}", subterm);
                     match transition {
                         STransition::Append => match (subterm[0].clone(), subterm[1].clone()) {
                             (SExpr::S(s1), SExpr::S(s2)) => {
@@ -264,14 +258,14 @@ fn stringdsl_new_terms(n: u32, b: HashMap<(u32, SNonTerminal), Vec<SExpr>>) {
                                 panic! {"production list encoded with errorneous information"}
                             }
                         },
-                        STransition::Len => match subterm[0].clone() {
-                            SExpr::S(s) => {
-                                yield_!((SNonTerminal::N, SExpr::N(N::Len(s))));
-                            }
-                            _ => {
-                                panic! {"production list encoded with errorneous information"}
-                            }
-                        },
+                        // STransition::Len => match subterm[0].clone() {
+                        //     SExpr::S(s) => {
+                        //         yield_!((SNonTerminal::N, SExpr::N(N::Len(s))));
+                        //     }
+                        //     _ => {
+                        //         panic! {"production list encoded with errorneous information"}
+                        //     }
+                        // },
                         _ => {
                             panic! {"production list encoded with errorneous information"}
                         }
@@ -321,7 +315,7 @@ trait Dsl {
     fn to_arithdsl_input(_: Self::Input) -> Vec<u32>;
 
     fn to_arithdsl_output(_: Self::Output) -> Option<u32>;
-    fn to_stringdsl_output(_: Self::Output) -> String;
+    fn to_stringdsl_output(_: Self::Output) -> Option<String>;
 }
 
 struct StringDsl {}
@@ -351,8 +345,8 @@ impl Dsl for StringDsl {
         panic! {"StringDsl does not have an arith output"}
     }
 
-    fn to_stringdsl_output(output: Self::Output) -> String {
-        output
+    fn to_stringdsl_output(output: Self::Output) -> Option<String> {
+        Some(output)
     }
     // fn eval(prog: S, input: Self::Input) -> Self::Output {
     //     string_dsl::eval(prog, input)
@@ -386,7 +380,7 @@ impl Dsl for ArithDsl {
         output
     }
 
-    fn to_stringdsl_output(_: Self::Output) -> String {
+    fn to_stringdsl_output(_: Self::Output) -> Option<String> {
         panic! {"ArithDsl does not have a string output"}
     }
     // fn eval(prog: AS, input: Self::Input) -> Self::Output {
@@ -426,7 +420,7 @@ fn _string_dsl_tests() {
 
     // x[0..find(x," ")]+" "+x[0..find(x," ")]
     // height = 4, there are 6*10^15 according to nadia's book
-    // bottom_up_synthesis(vec![(input3, output3), (input4, output4)]);
+    bottom_up_synthesis::<StringDsl>(vec![(input3, output3), (input4, output4)]);
 
     // x[0..1]
     bottom_up_synthesis::<StringDsl>(vec![(input5, output5), (input6, output6)]);

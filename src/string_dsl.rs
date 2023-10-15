@@ -28,7 +28,7 @@ pub static PRODUCTION: &[(NonTerminal, u32, Transition, &[NonTerminal])] = &[
         Transition::Find,
         &[NonTerminal::S, NonTerminal::S],
     ),
-    (NonTerminal::N, 1, Transition::Len, &[NonTerminal::S]),
+    // (NonTerminal::N, 1, Transition::Len, &[NonTerminal::S]),
 ];
 
 // p.17 nadia STRINGY DSL
@@ -55,7 +55,7 @@ impl fmt::Display for S {
 pub enum N {
     Zero,
     Find(S, S),
-    Len(S),
+    // Len(S),
 }
 
 impl fmt::Display for N {
@@ -63,7 +63,7 @@ impl fmt::Display for N {
         match self {
             N::Zero => write!(f, "0"),
             N::Find(s1, s2) => write!(f, "find({}, {})", s1, s2),
-            N::Len(s) => write!(f, "len({})", s),
+            // N::Len(s) => write!(f, "len({})", s),
         }
     }
 }
@@ -88,39 +88,51 @@ pub enum Transition {
     SubString,
     Zero,
     Find,
-    Len,
+    // Len,
 }
 
 // interpreter
-pub fn eval(s: S, input: String) -> String {
+pub fn eval(s: S, input: String) -> Option<String> {
     match s {
-        S::Input => input,
-        S::Space => " ".to_string(),
-        S::Append(s1, s2) => eval(*s1, input.clone()) + &eval(*s2, input),
+        S::Input => Some(input),
+        S::Space => Some(" ".to_string()),
+        S::Append(s1, s2) => 
+            match (eval(*s1, input.clone()), eval(*s2, input)) {
+                (Some(v1), Some(v2)) => Some(v1 + &v2),
+                _ => None,
+            },
         S::SubString(s, n1, n2) => {
             let s = eval(*s, input.clone());
             let n1 = eval_n(*n1, &input);
             let n2 = eval_n(*n2, &input);
             // is n1 .. n2 does not make sense return empty string
-            if n1 > n2 {
-                return "".to_string();
+            match (s, n1, n2) {
+                (Some(s), Some(n1), Some(n2)) => {
+                    if n1 > n2 || n2 > s.len() {
+                        None
+                    } else {
+                        Some(s[n1..n2].to_string())
+                    }
+                }
+                _ => None,
             }
-            if n2 > s.len() {
-                return "".to_string();
-            }
-            s[n1..n2].to_string()
         }
     }
 }
 
-pub fn eval_n(n: N, input: &str) -> usize {
+pub fn eval_n(n: N, input: &str) -> Option<usize> {
     match n {
-        N::Zero => 0,
+        N::Zero => Some(0),
         N::Find(s1, s2) => {
             let s1 = eval(s1, input.to_owned());
             let s2 = eval(s2, input.to_owned());
-            s1.find(&s2).unwrap_or(0)
+            match (s1, s2) {
+                (Some(s1), Some(s2)) => {
+                    s1.find(&s2)
+                }
+                _ => None,
+            }
         }
-        N::Len(s) => eval(s, input.to_owned()).len(),
+        // N::Len(s) => eval(s, input.to_owned()).len(),
     }
 }
