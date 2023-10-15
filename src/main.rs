@@ -1,52 +1,37 @@
 use std::collections::HashMap;
 use std::io::Write;
+mod arith_dsl;
 mod string_dsl;
 
 use itertools::{Itertools, MultiProduct};
 
 use ::next_gen::prelude::*;
 use string_dsl::*;
+use arith_dsl::{S as AS, eval as aeval};
 
 fn main() {
-    // x[0..find(x," ")]
-    let program1 = S::SubString(
-        Box::new(S::Input),
-        Box::new(N::Zero),
-        Box::new(N::Find(S::Input, S::Space)),
-    );
+    _string_dsl_tests();
 
-    // x[0..find(x," ")]+" "+x[0..find(x," ")]
-    let program2 = S::Append(
-        Box::new(program1.clone()),
-        Box::new(S::Append(Box::new(S::Space), Box::new(program1.clone()))),
-    );
+    // let program1 = AS::If(
+    //     Box::new(AS::Lt(Box::new(AS::Input(0)), Box::new(AS::Input(1)))),
+    //     Box::new(AS::Input(1)),
+    //     Box::new(AS::Input(0)));
 
-    let input1 = "Nadia Polikarpova".to_string();
-    let output1 = eval(program1.clone(), input1.clone());
-    println!("Output1 is: {}", output1);
+    // let input1 = vec![1, 2];
+    // let output1 = aeval(program1.clone(), input1.clone());
+    // println!("output1 is {:?}", output1);
 
-    let input2 = "Loris D\'Antoni".to_string();
-    let output2 = eval(program1, input2.clone());
-    println!("Output2 is: {}", output2);
+    // let input2 = vec![2, 1];
+    // let output2 = aeval(program1.clone(), input2.clone());
+    // println!("output2 is {:?}", output2);
 
-    let input3 = "Nadia Polikarpova".to_string();
-    let output3 = eval(program2.clone(), input3.clone());
-    println!("Output3 is: {}", output3);
-
-    let input4 = "Loris D\'Antoni".to_string();
-    let output4 = eval(program2, input4.clone());
-    println!("Output4 is: {}", output4);
-
-    // this program synthesizes really fast
-    bottom_up_synthesis(vec![(input1, output1), (input2, output2)]);
-
-    bottom_up_synthesis(vec![(input3, output3), (input4, output4)]);
 }
 
 // bottom up synthesis algorithm
-// the member ship oracle with the input is represented by e, the input output pair
+// the membership oracle with the input is represented by e, the input output pair
+// might make the member ship oracle some sort of a trait?
 // the output is the program, with start node S
-// I do not abstract away the grammar for now
+// I did not abstract away the grammar for now
 fn bottom_up_synthesis(e: Vec<(String, String)>) -> S {
     let mut b: HashMap<(u32, NonTerminal), Vec<Expr>> = HashMap::new();
 
@@ -54,17 +39,20 @@ fn bottom_up_synthesis(e: Vec<(String, String)>) -> S {
         // assume the max height is 10
         mk_gen!(let new_terms_res = new_terms(n, b.clone()));
         for (a, t) in new_terms_res {
-            // eprintln!("a is {:?}, t is {:?}", a.clone(), t.clone());
             if a == NonTerminal::S {
                 match t.clone() {
                     Expr::S(s) => {
                         println!("{}", s.clone());
+                        let mut pass = true;
                         for (input, output) in e.clone() {
-                            std::io::stdout().flush().unwrap();
-                            if eval(s.clone(), input.clone()) == output {
-                                println!("Found the program: {:?}", s);
-                                return s;
+                            if eval(s.clone(), input.clone()) != output {
+                                pass = false;
                             }
+                        }
+                        std::io::stdout().flush().unwrap();
+                        if pass == true {
+                            println!("Found the program: {}", s);
+                            return s;
                         }
                     }
                     _ => {
@@ -79,6 +67,7 @@ fn bottom_up_synthesis(e: Vec<(String, String)>) -> S {
     panic! {"No program found"}
 }
 
+// TODO: It's unsatisfying that the HashMap is borrowed everytime.
 #[generator(yield((NonTerminal, Expr)))]
 fn new_terms(n: u32, b: HashMap<(u32, NonTerminal), Vec<Expr>>) {
     // for all grammar productions
@@ -160,6 +149,14 @@ fn new_terms(n: u32, b: HashMap<(u32, NonTerminal), Vec<Expr>>) {
                                 panic! {"production list encoded with errorneous information"}
                             }
                         },
+                        Transition::Len => match subterm[0].clone() {
+                            Expr::S(s) => {
+                                yield_!((NonTerminal::N, Expr::N(N::Len(s))));
+                            }
+                            _ => {
+                                panic! {"production list encoded with errorneous information"}
+                            }
+                        },
                         _ => {
                             panic! {"production list encoded with errorneous information"}
                         }
@@ -191,3 +188,43 @@ where
 }
 
 impl<T: Iterator + Clone> ProductRepeat for T where T::Item: Clone {}
+
+fn _string_dsl_tests() {
+    let input1 = "Nadia Polikarpova".to_string();
+    let output1 = "Nadia".to_string();
+
+    let input2 = "Loris D\'Antoni".to_string();
+    let output2 = "Loris".to_string();
+
+    let input3 = "Nadia Polikarpova".to_string();
+    let output3 = "Nadia Nadia".to_string();
+
+    let input4 = "Loris D\'Antoni".to_string();
+    let output4 = "Loris Loris".to_string();
+
+    let input5 = "hello".to_string();
+    let output5 = "h".to_string();
+
+    let input6 = "world".to_string();
+    let output6 = "w".to_string();
+
+    let input7 = "hello".to_string();
+    let output7 = "o".to_string();
+
+    let input8 = "world".to_string();
+    let output8 = "d".to_string();
+
+    // x[0..find(x," ")]
+    // this program synthesizes really fast
+    bottom_up_synthesis(vec![(input1, output1), (input2, output2)]);
+
+    // x[0..find(x," ")]+" "+x[0..find(x," ")]
+    // height = 4, there are 6*10^15 according to nadia's book
+    // bottom_up_synthesis(vec![(input3, output3), (input4, output4)]);
+
+    // x[0..1]
+    bottom_up_synthesis(vec![(input5, output5), (input6, output6)]);
+
+    // ("_" ++ x)[len(x)..len(x ++ "_")]
+    // bottom_up_synthesis(vec![(input7, output7), (input8, output8)]);
+}

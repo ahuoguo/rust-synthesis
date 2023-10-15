@@ -1,4 +1,4 @@
-// AST and interpreter of the string based language
+// AST and interpreter of a string based DSL
 // The parser might also be defined here
 
 // TODO: probably need to extend this to a trait to abstract away the grammar
@@ -28,6 +28,7 @@ pub static PRODUCTION: &[(NonTerminal, u32, Transition, &[NonTerminal])] = &[
         Transition::Find,
         &[NonTerminal::S, NonTerminal::S],
     ),
+    (NonTerminal::N, 1, Transition::Len, &[NonTerminal::S]),
 ];
 
 // p.17 nadia STRINGY DSL
@@ -45,7 +46,7 @@ impl fmt::Display for S {
             S::Input => write!(f, "x"),
             S::Space => write!(f, "\"_\""),
             S::Append(s1, s2) => write!(f, "{} ++ {}", s1, s2),
-            S::SubString(s, n1, n2) => write!(f, "{}[{}..{}])", s, n1, n2),
+            S::SubString(s, n1, n2) => write!(f, "({})[{}..{}]", s, n1, n2),
         }
     }
 }
@@ -54,6 +55,7 @@ impl fmt::Display for S {
 pub enum N {
     Zero,
     Find(S, S),
+    Len(S),
 }
 
 impl fmt::Display for N {
@@ -61,6 +63,7 @@ impl fmt::Display for N {
         match self {
             N::Zero => write!(f, "0"),
             N::Find(s1, s2) => write!(f, "find({}, {})", s1, s2),
+            N::Len(s) => write!(f, "len({})", s),
         }
     }
 }
@@ -85,6 +88,7 @@ pub enum Transition {
     SubString,
     Zero,
     Find,
+    Len,
 }
 
 // interpreter
@@ -117,5 +121,6 @@ pub fn eval_n(n: N, input: &str) -> usize {
             let s2 = eval(s2, input.to_owned());
             s1.find(&s2).unwrap_or(0)
         }
+        N::Len(s) => eval(s, input.to_owned()).len(),
     }
 }
