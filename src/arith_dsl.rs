@@ -3,7 +3,6 @@
 // For simplicity, 0 is interpreted as false, otherwise true
 use std::fmt;
 
-
 pub static PRODUCTION: &[(u32, Transition)] = &[
     (0, Transition::Input),
     (2, Transition::Add),
@@ -15,8 +14,6 @@ pub static PRODUCTION: &[(u32, Transition)] = &[
     (2, Transition::Lt),
     (1, Transition::Not),
 ];
-
-
 
 #[derive(Clone, Debug)]
 pub enum S {
@@ -52,19 +49,25 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
                 None
             }
         }
-        S::Add(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
+        S::Add(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input)) {
             (Some(v1), Some(v2)) => Some(v1 + v2),
             _ => None,
         },
-        S::Sub(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
-            (Some(v1), Some(v2)) => if v1 > v2 { Some(v1 - v2) } else { None },
+        S::Sub(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input)) {
+            (Some(v1), Some(v2)) => {
+                if v1 > v2 {
+                    Some(v1 - v2)
+                } else {
+                    None
+                }
+            }
             _ => None,
         },
-        S::Mul(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
+        S::Mul(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input)) {
             (Some(v1), Some(v2)) => Some(v1 * v2),
             _ => None,
         },
-        S::Div(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
+        S::Div(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input)) {
             (Some(v1), Some(v2)) => {
                 if v2 == 0 {
                     None
@@ -77,14 +80,14 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
         S::If(s1, s2, s3) => match eval(*s1, input.clone()) {
             Some(v1) => {
                 if v1 == 0 {
-                    eval(*s3, input.clone())
+                    eval(*s3, input)
                 } else {
-                    eval(*s2, input.clone())
+                    eval(*s2, input)
                 }
             }
             _ => None,
         },
-        S::Eq(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
+        S::Eq(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input)) {
             (Some(v1), Some(v2)) => {
                 if v1 == v2 {
                     Some(1)
@@ -94,7 +97,7 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
             }
             _ => None,
         },
-        S::Lt(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input.clone())) {
+        S::Lt(s1, s2) => match (eval(*s1, input.clone()), eval(*s2, input)) {
             (Some(v1), Some(v2)) => {
                 if v1 < v2 {
                     Some(1)
@@ -104,7 +107,7 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
             }
             _ => None,
         },
-        S::Not(s) => match eval(*s, input.clone()) {
+        S::Not(s) => match eval(*s, input) {
             Some(v) => {
                 if v == 0 {
                     Some(1)
@@ -120,13 +123,16 @@ pub fn eval(s: S, input: Vec<u32>) -> Option<u32> {
 impl fmt::Display for S {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            S::Input(v) => // write!(f, "args.{}", v),
-                                        match v {
-                                            0 => write!(f, "x"),
-                                            1 => write!(f, "y"),
-                                            2 => write!(f, "z"),
-                                            _ => write!(f, "args.{}", v),
-                                        },
+            S::Input(v) =>
+            // write!(f, "args.{}", v),
+            {
+                match v {
+                    0 => write!(f, "x"),
+                    1 => write!(f, "y"),
+                    2 => write!(f, "z"),
+                    _ => write!(f, "args.{}", v),
+                }
+            }
             S::Add(s1, s2) => write!(f, "({} + {})", s1, s2),
             S::Sub(s1, s2) => write!(f, "({} - {})", s1, s2),
             S::Mul(s1, s2) => write!(f, "({} * {})", s1, s2),
